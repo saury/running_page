@@ -22,7 +22,7 @@ stravaweblib
 tenacity
 numpy
 tzlocal
-fit-tool
+fit-tool @ git+https://github.com/stuartlynne/python_fit_tool.git@version/0.9.13
 garmin-fit-sdk
 haversine==2.8.0
 garth
