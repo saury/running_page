@@ -59,17 +59,20 @@ class Generator:
             else:
                 filters = {"before": datetime.datetime.utcnow()}
 
-        for activity in self.client.get_activities(**filters):
-            if self.only_run and activity.type != "Run":
-                continue
-            if IGNORE_BEFORE_SAVING:
-                activity.summary_polyline = filter_out(activity.summary_polyline)
-            created = update_or_create_activity(self.session, activity)
-            if created:
-                sys.stdout.write("+")
-            else:
-                sys.stdout.write(".")
-            sys.stdout.flush()
+        try:
+            for activity in self.client.get_activities(**filters):
+                if self.only_run and activity.type != "Run":
+                    continue
+                if IGNORE_BEFORE_SAVING:
+                    activity.summary_polyline = filter_out(activity.summary_polyline)
+                created = update_or_create_activity(self.session, activity)
+                if created:
+                    sys.stdout.write("+")
+                else:
+                    sys.stdout.write(".")
+                sys.stdout.flush()
+        except stravalib.exc.Fault as e:
+            print(f"\nWarning: Failed to fetch activities from Strava: {e}")
         self.session.commit()
 
     def sync_from_data_dir(self, data_dir, file_suffix="gpx"):
