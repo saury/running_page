@@ -72,7 +72,7 @@ class Generator:
                     sys.stdout.write(".")
                 sys.stdout.flush()
         except stravalib.exc.Fault as e:
-            print(f"\nWarning: Failed to fetch activities from Strava: {e}")
+            print(f"\nWarning: Failed to fetch activities from Strava: {e}. Continuing with existing data.")
         self.session.commit()
 
     def sync_from_data_dir(self, data_dir, file_suffix="gpx"):
