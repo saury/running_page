@@ -68,7 +68,11 @@ class Generator:
             for activity in self.client.get_activities(**filters):
                 if self.only_run and activity.type != "Run":
                     continue
-                if IGNORE_BEFORE_SAVING and activity.map and activity.map.summary_polyline:
+                if (
+                    IGNORE_BEFORE_SAVING
+                    and activity.map
+                    and activity.map.summary_polyline
+                ):
                     activity.map.summary_polyline = filter_out(
                         activity.map.summary_polyline
                     )
