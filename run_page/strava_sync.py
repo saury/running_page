@@ -1,9 +1,33 @@
 #!/usr/bin/env python3
 import argparse
+import datetime
 import json
+import os
 
+import stravalib
 from config import JSON_FILE, SQL_FILE
 from generator import Generator
+from generator.db import Activity
+from sqlalchemy import func
+
+
+def _web_sync_days(generator):
+    configured_days = os.getenv("STRAVA_WEB_DAYS")
+    if configured_days:
+        days = int(configured_days)
+        if days <= 0:
+            raise ValueError("STRAVA_WEB_DAYS must be a positive integer")
+        return days
+    last_date = generator.session.query(func.max(Activity.start_date)).scalar()
+    if not last_date:
+        raise RuntimeError(
+            "No cached activities found. Set STRAVA_WEB_DAYS to cover "
+            "the history you want to import."
+        )
+    last_date = datetime.datetime.fromisoformat(last_date)
+    if last_date.tzinfo is None:
+        last_date = last_date.replace(tzinfo=datetime.UTC)
+    return max(7, (datetime.datetime.now(datetime.UTC) - last_date).days + 7)
 
 
 # for only run type, we use the same logic as garmin_sync
@@ -23,11 +47,42 @@ def run_strava_sync(
         only_run = True
     # if you want to refresh data change False to True
     generator.only_run = only_run
-    generator.sync(False)
+    try:
+        try:
+            generator.sync(False)
+        except stravalib.exc.Fault as error:
+            generator.session.rollback()
+            if "Inactive" not in str(error):
+                raise
+            jwt = os.getenv("STRAVA_JWT")
+            session_cookie = os.getenv("STRAVA_SESSION_COOKIE")
+            if not jwt and not session_cookie:
+                raise RuntimeError(
+                    "Strava API application is inactive. New activities were NOT "
+                    "synced. Reactivate the Strava API application, or set the "
+                    "STRAVA_SESSION_COOKIE (_strava4_session) or STRAVA_JWT "
+                    "(strava_remember_token) repository secret from your own "
+                    "Strava browser session. "
+                    "Existing cached data is preserved."
+                ) from error
+            from strava_web_sync import run_strava_web_sync
 
-    activities_list = generator.load()
-    with open(JSON_FILE, "w") as f:
-        json.dump(activities_list, f)
+            days = _web_sync_days(generator)
+            print(f"Strava API inactive; trying web sync for the last {days} days.")
+            if session_cookie:
+                run_strava_web_sync(
+                    days=days, only_run=only_run, session_cookie=session_cookie
+                )
+            else:
+                run_strava_web_sync(jwt, days=days, only_run=only_run)
+            return
+
+        activities_list = generator.load()
+        with open(JSON_FILE, "w") as f:
+            json.dump(activities_list, f)
+    finally:
+        generator.session.close()
+        generator.session.bind.dispose()
 
 
 if __name__ == "__main__":

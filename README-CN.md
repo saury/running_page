@@ -217,7 +217,18 @@ python run_page/strava_web_sync.py <JWT> --days 7
 python run_page/strava_web_sync.py <JWT> --days 7 --only-run
 ```
 
-**JWT 获取方式**：
+**会话 Cookie 获取方式（包括 Apple 登录）**：
+
+1. 在电脑浏览器登录 Strava 并打开训练页面。
+2. 开发者工具 → Network，刷新后选择发往 `www.strava.com` 的页面请求，
+   在 Request Cookies 中找到 `_strava4_session`。
+3. 把该 Cookie 的完整 Value 保存为仓库 Actions Secret：`STRAVA_SESSION_COOKIE`，
+   不要包含 `_strava4_session=`、其他 Cookie 或请求头。不要把它发到聊天或提交到代码。
+
+此方式会验证会话是否能访问个人页面及训练页面；会话失效或被 Strava 拒绝时会明确失败。
+仅有 Cookie 名称不能保证同步可用，仍需在自己的仓库中验证。无需更改 Apple 登录方式。
+
+**JWT 获取方式（仅在浏览器存在该 Cookie 时）**：
 
 1. 浏览器登录 [strava.com](https://www.strava.com)
 2. F12 打开开发者工具 → Application → Cookies → `https://www.strava.com`
@@ -226,10 +237,17 @@ python run_page/strava_web_sync.py <JWT> --days 7 --only-run
 **CI 接入**：
 
 - 在 workflow 的 `RUN_TYPE` 中选择 `strava_web`
-- 配置 GitHub Secret：`STRAVA_JWT`（JWT 值）
+- 配置 GitHub Secret：`STRAVA_SESSION_COOKIE`（`_strava4_session` 的值），
+  或 `STRAVA_JWT`（`strava_remember_token` 的值）；同时存在时优先使用会话 Cookie。
 - 可选 Variable：`STRAVA_WEB_DAYS`（默认 7）
 
-> ⚠️ JWT 约 30 天过期，过期后需重新从浏览器复制更新 `STRAVA_JWT`。
+本 fork 的 `RUN_TYPE: strava` 在遇到 `Application Inactive` 时会自动尝试网页同步，
+前提是已配置上述任意一个 Secret。自动回退默认从缓存中最后一条活动前 7 天开始补齐，
+也可以用 `STRAVA_WEB_DAYS` 指定正整数天数；没有缓存活动时必须指定回溯天数。
+未配置凭据、会话失效或同步失败都会使任务失败，不再把“仅保留旧数据”当作同步成功。
+请只在仓库 Settings → Secrets and variables → Actions 中填写凭据，不要提交到代码或日志中。
+
+> ⚠️ 会话或 JWT 可能过期；届时需重新从浏览器复制并更新对应 Secret。
 
 ## TUI（终端界面）
 
@@ -1456,8 +1474,10 @@ Actions [源码](https://github.com/yihong0618/running_page/blob/master/.github/
 同步上游后，请保留 `.github/workflows/run_data_sync.yml` 中的个人配置、
 `SAVE_DATA_IN_GITHUB_CACHE: true` 和 `DATA_CACHE_PREFIX: 'track_data'`，
 否则部署可能改用仓库内的上游示例数据。恢复配置后，运行 `Run Data Sync`
-会读取已有缓存并重新发布页面。Strava 获取活动失败时会输出警告并保留已有数据，
-但新增活动仍需解决 Strava 接口授权问题后才能同步。
+会读取已有缓存并重新发布页面。恢复缓存后会从当前提交还原 `assets/index.tsx`，
+避免旧缓存中的代码覆盖新版导出；SVG 和个人运动数据仍保留。
+Strava API 应用停用时可配置 `STRAVA_SESSION_COOKIE` 或 `STRAVA_JWT` 自动回退网页同步；
+未能完成同步时任务会失败，已有缓存不会因此清空。
 
 </details>
 
