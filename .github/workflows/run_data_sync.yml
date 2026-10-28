@@ -148,6 +148,7 @@ jobs:
         if: env.RUN_TYPE == 'strava'
         env:
           STRAVA_JWT: ${{ secrets.STRAVA_JWT }}
+          STRAVA_SESSION_COOKIE: ${{ secrets.STRAVA_SESSION_COOKIE }}
           STRAVA_WEB_DAYS: ${{ vars.STRAVA_WEB_DAYS }}
         run: |
           python run_page/strava_sync.py ${{ secrets.STRAVA_CLIENT_ID }} ${{ secrets.STRAVA_CLIENT_SECRET }} ${{ secrets.STRAVA_CLIENT_REFRESH_TOKEN }} --only-run
@@ -159,8 +160,9 @@ jobs:
         if: env.RUN_TYPE == 'strava_web'
         env:
           STRAVA_JWT: ${{ secrets.STRAVA_JWT }}
+          STRAVA_SESSION_COOKIE: ${{ secrets.STRAVA_SESSION_COOKIE }}
         run: |
-          python run_page/strava_web_sync.py "$STRAVA_JWT" --days "${{ vars.STRAVA_WEB_DAYS || '7' }}" --only-run
+          python run_page/strava_web_sync.py --days "${{ vars.STRAVA_WEB_DAYS || '7' }}" --only-run
 
       # for garmin if you want generate 'tcx' you can add --tcx command in the args.
       - name: Run sync Garmin script

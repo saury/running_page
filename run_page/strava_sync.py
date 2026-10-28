@@ -55,19 +55,26 @@ def run_strava_sync(
             if "Inactive" not in str(error):
                 raise
             jwt = os.getenv("STRAVA_JWT")
-            if not jwt:
+            session_cookie = os.getenv("STRAVA_SESSION_COOKIE")
+            if not jwt and not session_cookie:
                 raise RuntimeError(
                     "Strava API application is inactive. New activities were NOT "
                     "synced. Reactivate the Strava API application, or set the "
-                    "STRAVA_JWT repository secret to the strava_remember_token "
-                    "cookie from your own Strava browser session. "
+                    "STRAVA_SESSION_COOKIE (_strava4_session) or STRAVA_JWT "
+                    "(strava_remember_token) repository secret from your own "
+                    "Strava browser session. "
                     "Existing cached data is preserved."
                 ) from error
             from strava_web_sync import run_strava_web_sync
 
             days = _web_sync_days(generator)
             print(f"Strava API inactive; trying web sync for the last {days} days.")
-            run_strava_web_sync(jwt, days=days, only_run=only_run)
+            if session_cookie:
+                run_strava_web_sync(
+                    days=days, only_run=only_run, session_cookie=session_cookie
+                )
+            else:
+                run_strava_web_sync(jwt, days=days, only_run=only_run)
             return
 
         activities_list = generator.load()

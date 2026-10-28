@@ -1,10 +1,10 @@
-"""Strava web-sync: pull activities via Strava's web endpoints (JWT session).
+"""Strava web-sync using a browser session cookie or remember-token JWT.
 
 Why this exists:
     The Strava API application (OAuth2) can be in an "inactive" state, causing
     every REST API request to return 403. The web endpoints (training_activities
     list + per-activity streams) still work with a logged-in session (the
-    strava_remember_token JWT), so this script syncs data through those instead.
+    _strava4_session cookie or strava_remember_token JWT).
 
 Endpoints used (both verified working with a JWT session cookie):
     GET /athlete/training_activities?page=N   -> paginated activity list
@@ -13,15 +13,20 @@ Endpoints used (both verified working with a JWT session cookie):
 Usage:
     python run_page/strava_web_sync.py <jwt> [--days 60] [--only-run]
     # jwt = value of the strava_remember_token cookie (from the browser)
+    STRAVA_SESSION_COOKIE=... python run_page/strava_web_sync.py --days 60 --only-run
 """
 
 import argparse
 import datetime
 import json
 import logging
+import os
+import re
 import sys
 import time
 import uuid
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlsplit
 
 import pytz
 import requests
@@ -55,6 +60,59 @@ LIST_HEADERS = {
     "accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript",
     "x-requested-with": "XMLHttpRequest",
 }
+
+
+class _CsrfParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.token = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "meta" and attrs.get("name") == "csrf-token":
+            self.token = attrs.get("content")
+
+
+class SessionWebClient:
+    def __init__(self, cookie):
+        self._session = requests.Session()
+        self._session.cookies.set(
+            "_strava4_session", cookie, domain="www.strava.com", path="/", secure=True
+        )
+        try:
+            response = self._session.get(
+                "https://www.strava.com/me", allow_redirects=False, timeout=30
+            )
+            response.raise_for_status()
+            target = urlsplit(
+                urljoin(response.url, response.headers.get("Location", ""))
+            )
+            if (
+                not response.is_redirect
+                or target.hostname != "www.strava.com"
+                or not re.fullmatch(r"/athletes/\d+/?", target.path)
+            ):
+                raise ValueError(
+                    "Strava session login failed. Refresh STRAVA_SESSION_COOKIE "
+                    "from your logged-in browser's _strava4_session cookie."
+                )
+            response = self._session.get(
+                "https://www.strava.com/athlete/training",
+                allow_redirects=False,
+                timeout=30,
+            )
+            response.raise_for_status()
+            parser = _CsrfParser()
+            parser.feed(response.text)
+            if response.is_redirect or not parser.token:
+                raise ValueError(
+                    "Could not load the authenticated Strava training page or CSRF "
+                    "token. Refresh STRAVA_SESSION_COOKIE."
+                )
+            self.csrf = {"authenticity_token": parser.token}
+        except (requests.RequestException, ValueError):
+            self._session.close()
+            raise
 
 
 def _polyline_encode(latlng_list):
@@ -137,9 +195,21 @@ def _fmt_local_date(ts):
 
 
 def _fetch_json(client, url, **extra_headers):
-    resp = client._session.get(url, headers={**LIST_HEADERS, **extra_headers})
+    resp = client._session.get(
+        url,
+        headers={**LIST_HEADERS, **extra_headers},
+        allow_redirects=False,
+        timeout=30,
+    )
     resp.raise_for_status()
-    return resp.json()
+    if resp.is_redirect:
+        raise ValueError(
+            "Strava redirected the activity request; refresh web credentials."
+        )
+    data = resp.json()
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        raise TypeError("Unexpected Strava activity response; sync did not complete.")
+    return data
 
 
 # Headers the per-activity streams endpoint requires (403 without the CSRF token).
@@ -156,20 +226,28 @@ def _fetch_streams(client, aid):
     # x-csrf-token is the value of the authenticity_token param
     if csrf:
         headers["x-csrf-token"] = next(iter(csrf.values()))
-    resp = client._session.get(STREAMS_URL.format(aid=aid), headers=headers)
+    resp = client._session.get(
+        STREAMS_URL.format(aid=aid), headers=headers, allow_redirects=False, timeout=30
+    )
     resp.raise_for_status()
+    if resp.is_redirect:
+        raise ValueError(
+            "Strava redirected the streams request; refresh web credentials."
+        )
     return resp.json()
 
 
-def run_strava_web_sync(jwt, days=7, only_run=False):
-    if not jwt:
+def run_strava_web_sync(jwt=None, days=7, only_run=False, *, session_cookie=None):
+    session_cookie = session_cookie or os.getenv("STRAVA_SESSION_COOKIE")
+    jwt = jwt or os.getenv("STRAVA_JWT")
+    if not session_cookie and not jwt:
         raise ValueError(
-            "STRAVA_JWT is required: configure your own strava_remember_token "
-            "cookie as a repository secret."
+            "Configure STRAVA_SESSION_COOKIE (_strava4_session) or "
+            "STRAVA_JWT (strava_remember_token) as a repository secret."
         )
     if days <= 0:
         raise ValueError("days must be a positive integer")
-    client = WebClient(jwt=jwt)
+    client = SessionWebClient(session_cookie) if session_cookie else WebClient(jwt=jwt)
     print("Web login ok")
 
     session = init_db(SQL_FILE)
@@ -233,9 +311,13 @@ def _finalize(session, count):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Sync Strava activities via web endpoints (JWT session)."
+        description="Sync Strava activities via browser session cookies."
     )
-    parser.add_argument("jwt", help="Strava strava_remember_token JWT cookie value")
+    parser.add_argument(
+        "jwt",
+        nargs="?",
+        help="Optional remember-token JWT; prefer credentials in environment variables",
+    )
     parser.add_argument(
         "--days", type=int, default=7, help="number of days to look back (default: 7)"
     )
