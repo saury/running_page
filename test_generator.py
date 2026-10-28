@@ -1,5 +1,7 @@
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import polyline
 import pytest
@@ -68,6 +70,68 @@ def test_load_preserves_source_routes_and_missing_gps(
             assert result[1]["subtype"] == indoor.subtype == subtype
             assert result[1]["location_country"] is None
             assert indoor.location_country is None
+    finally:
+        app.session.close()
+        app.session.bind.dispose()
+
+
+@pytest.mark.parametrize("api_fault", [True, False])
+def test_sync_preserves_cached_data_on_strava_fault(
+    generator, monkeypatch, tmp_path, capsys, api_fault
+):
+    app = generator.Generator(tmp_path / "activities.db")
+    try:
+        app.session.add(
+            generator.Activity(
+                **_activities()[0],
+                start_date="2026-01-01 12:00:00",
+                start_date_local="2026-01-01 12:00:00",
+            )
+        )
+        app.session.commit()
+        monkeypatch.setattr(app, "check_access", lambda: None)
+        error = (
+            generator.stravalib.exc.Fault("Application Inactive")
+            if api_fault
+            else RuntimeError("Unexpected error")
+        )
+
+        def failed_activities(**filters):
+            yield from ()
+            raise error
+
+        monkeypatch.setattr(app.client, "get_activities", failed_activities)
+        if api_fault:
+            app.sync(False)
+            output = capsys.readouterr().out
+            assert "Warning: Failed to fetch activities from Strava:" in output
+            assert "Continuing with existing data." in output
+        else:
+            with pytest.raises(RuntimeError, match="Unexpected error"):
+                app.sync(False)
+        assert app.session.query(generator.Activity).count() == 1
+        assert app.session.get(generator.Activity, 1).distance == 2000
+    finally:
+        app.session.close()
+        app.session.bind.dispose()
+
+
+def test_sync_only_run_keeps_upstream_activity_fields(generator, monkeypatch, tmp_path):
+    app = generator.Generator(tmp_path / "activities.db")
+    try:
+        app.only_run = True
+        monkeypatch.setattr(app, "check_access", lambda: None)
+        run = SimpleNamespace(type="Run", map=None, total_elevation_gain=42)
+        ride = SimpleNamespace(type="Ride")
+        monkeypatch.setattr(app.client, "get_activities", lambda **filters: [ride, run])
+        save_activity = Mock(return_value=True)
+        monkeypatch.setattr(generator, "update_or_create_activity", save_activity)
+
+        app.sync(True)
+
+        save_activity.assert_called_once_with(app.session, run)
+        assert run.elevation_gain == 42
+        assert run.subtype == "Run"
     finally:
         app.session.close()
         app.session.bind.dispose()

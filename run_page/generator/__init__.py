@@ -64,22 +64,32 @@ class Generator:
             else:
                 filters = {"before": datetime.datetime.now(datetime.UTC)}
 
-        for activity in self.client.get_activities(**filters):
-            if self.only_run and activity.type != "Run":
-                continue
-            if IGNORE_BEFORE_SAVING and activity.map and activity.map.summary_polyline:
-                activity.map.summary_polyline = filter_out(
-                    activity.map.summary_polyline
-                )
-            #  strava use total_elevation_gain as elevation_gain
-            activity.elevation_gain = activity.total_elevation_gain
-            activity.subtype = activity.type
-            created = update_or_create_activity(self.session, activity)
-            if created:
-                sys.stdout.write("+")
-            else:
-                sys.stdout.write(".")
-            sys.stdout.flush()
+        try:
+            for activity in self.client.get_activities(**filters):
+                if self.only_run and activity.type != "Run":
+                    continue
+                if (
+                    IGNORE_BEFORE_SAVING
+                    and activity.map
+                    and activity.map.summary_polyline
+                ):
+                    activity.map.summary_polyline = filter_out(
+                        activity.map.summary_polyline
+                    )
+                #  strava use total_elevation_gain as elevation_gain
+                activity.elevation_gain = activity.total_elevation_gain
+                activity.subtype = activity.type
+                created = update_or_create_activity(self.session, activity)
+                if created:
+                    sys.stdout.write("+")
+                else:
+                    sys.stdout.write(".")
+                sys.stdout.flush()
+        except stravalib.exc.Fault as error:
+            print(
+                f"\nWarning: Failed to fetch activities from Strava: {error}. "
+                "Continuing with existing data."
+            )
         self.session.commit()
 
     def sync_from_data_dir(self, data_dir, file_suffix="gpx", activity_title_dict=None):
@@ -140,7 +150,7 @@ class Generator:
         last_date = None
         for activity in activities:
             # Determine running streak.
-            date = datetime.datetime.strptime(  # noqa: DTZ007
+            date = datetime.datetime.strptime(
                 activity.start_date_local, "%Y-%m-%d %H:%M:%S"  # type: ignore
             ).date()
             if last_date is None:
