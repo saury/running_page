@@ -71,6 +71,10 @@ jobs:
             ${{ inputs.data_cache_prefix }}-${{ github.sha }}-
             ${{ inputs.data_cache_prefix }}-
 
+      - name: Restore asset module from checkout
+        if: inputs.save_data_in_github_cache
+        run: git restore --source=HEAD -- assets/index.tsx
+
       - name: Setup Node.js environment
         uses: actions/setup-node@v4
         with:

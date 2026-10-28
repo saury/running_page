@@ -229,6 +229,12 @@ python run_page/strava_web_sync.py <JWT> --days 7 --only-run
 - 配置 GitHub Secret：`STRAVA_JWT`（JWT 值）
 - 可选 Variable：`STRAVA_WEB_DAYS`（默认 7）
 
+本 fork 的 `RUN_TYPE: strava` 在遇到 `Application Inactive` 时会自动尝试网页同步，
+前提是已配置 `STRAVA_JWT`。自动回退默认从缓存中最后一条活动前 7 天开始补齐，
+也可以用 `STRAVA_WEB_DAYS` 指定正整数天数；没有缓存活动时必须指定回溯天数。
+未配置 JWT、JWT 失效或同步失败都会使任务失败，不再把“仅保留旧数据”当作同步成功。
+请只在仓库 Settings → Secrets and variables → Actions 中填写凭据，不要提交到代码或日志中。
+
 > ⚠️ JWT 约 30 天过期，过期后需重新从浏览器复制更新 `STRAVA_JWT`。
 
 ## TUI（终端界面）
@@ -1456,8 +1462,10 @@ Actions [源码](https://github.com/yihong0618/running_page/blob/master/.github/
 同步上游后，请保留 `.github/workflows/run_data_sync.yml` 中的个人配置、
 `SAVE_DATA_IN_GITHUB_CACHE: true` 和 `DATA_CACHE_PREFIX: 'track_data'`，
 否则部署可能改用仓库内的上游示例数据。恢复配置后，运行 `Run Data Sync`
-会读取已有缓存并重新发布页面。Strava 获取活动失败时会输出警告并保留已有数据，
-但新增活动仍需解决 Strava 接口授权问题后才能同步。
+会读取已有缓存并重新发布页面。恢复缓存后会从当前提交还原 `assets/index.tsx`，
+避免旧缓存中的代码覆盖新版导出；SVG 和个人运动数据仍保留。
+Strava API 应用停用时可配置 `STRAVA_JWT` 自动回退网页同步；
+未能完成同步时任务会失败，已有缓存不会因此清空。
 
 </details>
 

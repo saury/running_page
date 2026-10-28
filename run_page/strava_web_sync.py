@@ -162,6 +162,13 @@ def _fetch_streams(client, aid):
 
 
 def run_strava_web_sync(jwt, days=7, only_run=False):
+    if not jwt:
+        raise ValueError(
+            "STRAVA_JWT is required: configure your own strava_remember_token "
+            "cookie as a repository secret."
+        )
+    if days <= 0:
+        raise ValueError("days must be a positive integer")
     client = WebClient(jwt=jwt)
     print("Web login ok")
 
@@ -187,7 +194,7 @@ def run_strava_web_sync(jwt, days=7, only_run=False):
                 continue
             _sync_one(client, session, raw)
             total_fetched += 1
-        if page >= data.get("total", 1) // 20:
+        if page * 20 >= data.get("total", len(models)):
             break
         page += 1
         time.sleep(0.3)  # be gentle with rate limits

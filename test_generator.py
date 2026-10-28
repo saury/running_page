@@ -102,10 +102,13 @@ def test_sync_preserves_cached_data_on_strava_fault(
 
         monkeypatch.setattr(app.client, "get_activities", failed_activities)
         if api_fault:
-            app.sync(False)
+            with pytest.raises(
+                generator.stravalib.exc.Fault, match="Application Inactive"
+            ):
+                app.sync(False)
             output = capsys.readouterr().out
-            assert "Warning: Failed to fetch activities from Strava:" in output
-            assert "Continuing with existing data." in output
+            assert "Error: Failed to fetch activities from Strava:" in output
+            assert "sync did not complete." in output
         else:
             with pytest.raises(RuntimeError, match="Unexpected error"):
                 app.sync(False)
