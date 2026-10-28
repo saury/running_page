@@ -1452,6 +1452,13 @@ Actions [源码](https://github.com/yihong0618/running_page/blob/master/.github/
 
 如果你用 `GitHub Pages` 部署建议把这个值设置成 `true`。
 
+本 fork 使用 `strava --only-run`，并通过 `track_data` 前缀的缓存保存个人数据。
+同步上游后，请保留 `.github/workflows/run_data_sync.yml` 中的个人配置、
+`SAVE_DATA_IN_GITHUB_CACHE: true` 和 `DATA_CACHE_PREFIX: 'track_data'`，
+否则部署可能改用仓库内的上游示例数据。恢复配置后，运行 `Run Data Sync`
+会读取已有缓存并重新发布页面。Strava 获取活动失败时会输出警告并保留已有数据，
+但新增活动仍需解决 Strava 接口授权问题后才能同步。
+
 </details>
 
 # Fit 文件
