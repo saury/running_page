@@ -28,9 +28,8 @@ import uuid
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
-import pytz
 import requests
-from config import BASE_TIMEZONE, JSON_FILE, SQL_FILE, run_map, start_point
+from config import JSON_FILE, SQL_FILE, run_map, start_point
 from generator.db import init_db, update_or_create_activity
 from stravaweblib import WebClient
 
@@ -186,11 +185,11 @@ class WebActivity:
 
 
 def _fmt_local_date(ts):
-    """Unix timestamp -> 'YYYY-MM-DD HH:MM:SS' in BASE_TIMEZONE."""
+    """Strava's start_date_local_raw already encodes the local wall-clock time
+    as if it were UTC, so format it as-is without any timezone conversion."""
     if not ts:
         return ""
-    local_tz = pytz.timezone(BASE_TIMEZONE)
-    dt = datetime.datetime.fromtimestamp(int(ts), tz=datetime.UTC).astimezone(local_tz)
+    dt = datetime.datetime.fromtimestamp(int(ts), tz=datetime.UTC)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
