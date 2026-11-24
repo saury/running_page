@@ -304,3 +304,26 @@ def test_cache_restore_preserves_current_asset_module(workflow):
 
     assert restore["run"] == "git restore --source=HEAD -- assets/index.tsx"
     assert restore["if"] == steps[cache_index]["if"]
+
+
+def test_pages_deployment_uses_build_attempt_artifact():
+    root = Path(__file__).parent
+    config = yaml.safe_load(
+        (root / ".github" / "workflows" / "gh-pages.yml").read_text()
+    )
+    build = config["jobs"]["build_and_deploy"]
+    deploy = config["jobs"]["deploy"]
+    upload = next(
+        step for step in build["steps"] if step.get("name") == "Upload artifact"
+    )
+    deployment = deploy["steps"][0]
+
+    assert deploy["needs"] == "build_and_deploy"
+    assert upload["with"]["name"] == build["outputs"]["artifact_name"]
+    assert upload["with"]["name"] == (
+        "github-pages-${{ github.run_id }}-${{ github.run_attempt }}"
+    )
+    assert deployment["with"]["artifact_name"] == (
+        "${{ needs.build_and_deploy.outputs.artifact_name }}"
+    )
+    assert deploy["environment"]["url"] == "${{ steps.deployment.outputs.page_url }}"
